@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handwriting Recognition</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Thêm dòng này để giúp bảo vệ CSRF -->
+    {% csrf_token %}
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .app-container {
+            max-width: 1200px;
+            margin: 30px auto;
+        }
+        .app-title {
+            margin-bottom: 30px;
+            color: #343a40;
+        }
+        .upload-card {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+        .upload-card:hover {
+            box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+        }
+        .result-card {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            min-height: 400px;
+        }
+        .upload-btn {
+            background-color: #007bff;
+            border: none;
+            padding: 10px 20px;
+        }
+        .upload-btn:hover {
+            background-color: #0069d9;
+        }
+        .upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 5px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+        }
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+            color: #6c757d;
+        }
+        .placeholder-text {
+            color: #6c757d;
+            font-style: italic;
+        }
+        #preview-img {
+            max-width: 100%;
+            max-height: 300px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+        .canvas-container {
+            position: relative;
+            margin-top: 20px;
+            border: 1px solid #dee2e6;
+            overflow: hidden;
+            background-color: white;
+            min-height: 300px;
+        }
+        .text-segment {
+            position: absolute;
+            border: 2px solid #3498db;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 5px;
+            overflow: hidden;
+            user-select: text;
+            cursor: text;
+        }
+        .text-segment-placeholder {
+            color: #aaa;
+            font-style: italic;
+        }
+        .copy-hint {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        .copy-all-btn {
+            background-color: #6c757d;
+            border: none;
+            padding: 5px 10px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .copy-all-btn:hover {
+            background-color: #5a6268;
+        }
+        .text-segment[contenteditable="true"]:focus {
+            outline: 2px solid #28a745;
+            border-color: #28a745;
+        }
+        /* Thêm style mới cho text container */
+        .main-text-container {
+            border: 2px solid #28a745;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 20px;
+            background-color: rgba(255, 255, 255, 0.95);
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container app-container">
+        <h1 class="text-center app-title">Handwriting Recognition App</h1>
+        <div class="row">
+            <div class="col-md-5">
+                <div class="card upload-card p-4">
+                    <h5 class="card-title mb-3">Upload Image</h5>
+                    <div class="upload-area" id="upload-area">
+                        <div class="upload-icon">📁</div>
+                        <p>Click to browse or drag & drop image here</p>
+                        <p class="text-muted small">Supports .jpg, .jpeg, .png formats</p>
+                        <input type="file" id="file-input" style="display: none;" accept="image/jpeg, image/png">
+                        <button class="btn upload-btn" id="browse-btn">Browse Files</button>
+                    </div>
+                    <div id="preview-container" style="display: none;">
+                        <h6>Preview:</h6>
+                        <img id="preview-img" src="" alt="Preview">
+                        <div class="mt-3">
+                            <button class="btn btn-primary" id="recognize-btn">Recognize Text</button>
+                            <button class="btn btn-outline-secondary ms-2" id="clear-btn">Clear</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-7">
+                <div class="card result-card p-4">
+                    <h5 class="card-title mb-3">Recognition Result</h5>
+                    
+                    <div class="result-content" id="result-area">
+                        <p class="placeholder-text" id="result-placeholder">
+                            Upload an image to see the recognition result
+                        </p>
+                        <div id="result-text" style="display: none;">                            
+                            <hr>
+                            <div id="iteration-info"></div>
+                            
+                            <!-- Xóa continue-container và các nút liên quan -->
+                            <div class="canvas-container" id="text-container">
+                                <!-- Các khung bounding box tạm thời, chờ text dự đoán -->
+                                <!-- Sẽ được tạo động dựa trên dữ liệu segments -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const fileInput = document.getElementById('file-input');
+            const uploadArea = document.getElementById('upload-area');
+            const browseBtn = document.getElementById('browse-btn');
+            const previewContainer = document.getElementById('preview-container');
+            const previewImg = document.getElementById('preview-img');
+            const recognizeBtn = document.getElementById('recognize-btn');
+            const clearBtn = document.getElementById('clear-btn');
+            const resultPlaceholder = document.getElementById('result-placeholder');
+            const resultText = document.getElementById('result-text');
+            const textContainer = document.getElementById('text-container');
+            
+            let selectedFile = null;
+            
+            // Sự kiện click cho khu vực upload
+            uploadArea.addEventListener('click', function() {
+                fileInput.click();
+            });
+            
+            // Sự kiện click cho nút browse
+            browseBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                fileInput.click();
+            });
+            
+            // Xử lý khi chọn file
+            fileInput.addEventListener('change', function() {
+                if (fileInput.files.length > 0) {
+                    selectedFile = fileInput.files[0];
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        previewImg.src = e.target.result;
+                        previewContainer.style.display = 'block';
+                        resultPlaceholder.style.display = 'none';
+                        resultText.style.display = 'block';
+                        textContainer.innerHTML = '';
+                        // Gửi yêu cầu preview để lấy bounding boxes và vẽ placeholder
+                        const previewData = new FormData();
+                        previewData.append('image_file', selectedFile);
+                        previewData.append('preview', '1');
+                        fetch('/recognize/', {
+                            method: 'POST',
+                            body: previewData,
+                            headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}
+                        })
+                        .then(res => res.json())
+                        .then(d => {
+                            if (d.segments) createPlaceholderBoxes(d.segments, d.imageWidth, d.imageHeight);
+                        });
+                    };
+                    reader.readAsDataURL(selectedFile);
+                }
+            });
+
+            // Hàm vẽ các bounding box placeholder
+            function createPlaceholderBoxes(segments, imgWidth, imgHeight) {
+                const containerWidth = textContainer.clientWidth;
+                const scale = containerWidth / imgWidth;
+                textContainer.style.height = (imgHeight * scale) + 'px';
+                segments.forEach(segment => {
+                    const box = segment.box;
+                    const el = document.createElement('div');
+                    el.className = 'text-segment text-segment-placeholder';
+                    el.style.left = (box.x * scale) + 'px';
+                    el.style.top = (box.y * scale) + 'px';
+                    el.style.width = (box.width * scale) + 'px';
+                    el.style.height = (box.height * scale) + 'px';
+                    el.textContent = 'Đợi text...';
+                    textContainer.appendChild(el);
+                });
+            }
+
+            // Xử lý kéo thả file
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                uploadArea.addEventListener(eventName, preventDefaults, false);
+            });
+            
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
+            uploadArea.addEventListener('dragenter', function() {
+                uploadArea.classList.add('highlight');
+            });
+            
+            uploadArea.addEventListener('dragleave', function() {
+                uploadArea.classList.remove('highlight');
+            });
+            
+            uploadArea.addEventListener('drop', function(e) {
+                uploadArea.classList.remove('highlight');
+                let dt = e.dataTransfer;
+                let files = dt.files;
+                if (files.length > 0) {
+                    selectedFile = files[0];
+                    handleFiles(files);
+                }
+            });
+            
+            function handleFiles(files) {
+                const file = files[0];
+                if (file.type.match('image.*')) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        previewImg.src = e.target.result;
+                        previewContainer.style.display = 'block';
+                        resultPlaceholder.style.display = 'none';
+                        resultText.style.display = 'block';
+                        textContainer.innerHTML = '';
+                        // Gửi yêu cầu preview để lấy bounding boxes và vẽ placeholder
+                        const previewData = new FormData();
+                        previewData.append('image_file', file);
+                        previewData.append('preview', '1');
+                        fetch('/recognize/', {
+                            method: 'POST',
+                            body: previewData,
+                            headers: {'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value}
+                        })
+                        .then(res => res.json())
+                        .then(d => {
+                            if (d.segments) createPlaceholderBoxes(d.segments, d.imageWidth, d.imageHeight);
+                        });
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    alert('Please select an image file.');
+                }
+            }
+            
+            // Xử lý khi click nút recognize
+            recognizeBtn.addEventListener('click', function() {
+                if (!selectedFile) return;
+                
+                const formData = new FormData();
+                formData.append('image_file', selectedFile);
+                
+                recognizeBtn.disabled = true;
+                recognizeBtn.textContent = 'Processing...';
+                
+                fetch('/recognize/', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    recognizeBtn.disabled = false;
+                    recognizeBtn.textContent = 'Recognize Text';
+                    showResult(data);
+                })
+                .catch(error => {
+                    recognizeBtn.disabled = false;
+                    recognizeBtn.textContent = 'Recognize Text';
+                    alert('Error processing image. Please try again.');
+                    console.error('Error:', error);
+                });
+            });
+            
+            // Xử lý khi click nút clear
+            clearBtn.addEventListener('click', function() {
+                previewContainer.style.display = 'none';
+                previewImg.src = '';
+                resultPlaceholder.style.display = 'block';
+                resultText.style.display = 'none';
+                selectedFile = null;
+                fileInput.value = '';
+                textContainer.innerHTML = '';
+            });
+            
+            // Hiển thị kết quả nhận dạng: tạo bounding box và điền text
+            function showResult(data) {
+                resultPlaceholder.style.display = 'none';
+                resultText.style.display = 'block';
+                textContainer.innerHTML = '';
+                const containerWidth = textContainer.clientWidth;
+                const imgWidth = data.imageWidth;
+                const imgHeight = data.imageHeight;
+                const scale = containerWidth / imgWidth;
+                textContainer.style.height = (imgHeight * scale) + 'px';
+                (data.segments || []).forEach(segment => {
+                    const box = segment.box;
+                    const x = box.x * scale;
+                    const y = box.y * scale;
+                    const width = box.width * scale;
+                    const height = box.height * scale;
+                    const el = document.createElement('div');
+                    el.className = 'text-segment';
+                    el.style.left = x + 'px';
+                    el.style.top = y + 'px';
+                    el.style.width = width + 'px';
+                    el.style.height = height + 'px';
+                    el.style.fontSize = Math.min(Math.floor(height / 3), 16) + 'px';
+                    el.textContent = segment.text;
+                    textContainer.appendChild(el);
+                });
+            }
+        });
+    </script>
+</body>
+</html>

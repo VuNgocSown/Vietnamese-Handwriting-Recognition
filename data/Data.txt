@@ -1,0 +1,2 @@
+Dataset 7K:https://github.com/nghiangh/UIT-HWDB-dataset
+Dataset 2K + 7K: https://drive.google.com/drive/folders/1wPRRnFsOzKHXMEARvcfPyPjt9S007Dgr?usp=sharing
